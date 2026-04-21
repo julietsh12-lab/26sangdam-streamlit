@@ -11,7 +11,7 @@ supabase = create_client(url, key)
 # ─── 페이지 설정 ──────────────────────────────────
 st.set_page_config(page_title="해운대중학교 진학상담", layout="centered")
 
-# ─── 커스텀 CSS ──────────────────────────────────
+# ─── 커스텀 CSS (UI 스타일 유지) ──────────────────
 st.markdown("""
 <style>
     .school-title {
@@ -57,7 +57,7 @@ def login(email, password):
     except:
         return False
 
-# ─── 메인 화면 ────────────────────────────────────
+# ─── 메인 화면 로직 ─────────────────────────────
 if st.session_state.user is None:
     st.markdown('<div class="school-title">🏫 해운대중학교</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-title">진학상담 시스템 로그인을 환영합니다.</div>', unsafe_allow_html=True)
@@ -82,60 +82,88 @@ if st.session_state.user is None:
             except: st.error("가입 실패")
     st.stop()
 
-# ─── 로그인 후 화면 (사이드바 수정 부분) ──────────────
-with st.sidebar:
-    st.markdown(f"### 👤 안녕하세요")
-    
-    # 💡 포인트: 관리자(admin) 계정일 때만 역할 정보 표시
-    if st.session_state.role == "admin":
-        st.info(f"{st.session_state.user.email}\n\n**역할:** {st.session_state.role}")
-    else:
-        # 일반 사용자는 이메일만 깔끔하게 표시
-        st.success(f"{st.session_state.user.email}")
-        
-    if st.button("로그아웃"):
-        st.session_state.user = None
-        st.session_state.role = None
-        st.rerun()
-    st.divider()
-    menu = st.radio("📋 메뉴 선택", ["🏠 학생 목록", "✍️ 상담 기록 작성", "🔍 상담 기록 조회"])
+# ─── 로그인 후 화면 ──────────────────────────────
+else:
+    with st.sidebar:
+        st.markdown(f"### 👤 안녕하세요")
+        if st.session_state.role == "admin":
+            st.info(f"{st.session_state.user.email}\n\n**역할:** {st.session_state.role}")
+        else:
+            st.success(f"{st.session_state.user.email}")
+            
+        if st.button("로그아웃"):
+            st.session_state.user = None
+            st.session_state.role = None
+            st.rerun()
+        st.divider()
+        menu = st.radio("📋 메뉴 선택", ["🏠 학생 목록", "✍️ 상담 기록 작성", "🔍 상담 기록 조회"])
 
-# ─── 각 메뉴별 기능 (기존과 동일) ─────────────────────
-if menu == "🏠 학생 목록":
-    st.title("🏠 학생 목록")
-    try:
-        res = supabase.table("student_records").select("*").execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
-            df['학년'] = df['학번'].astype(str).str[0]
-            df_display = df[["학년", "학번", "이름", "희망학교1", "희망직업(본인)"]]
-            df_display.columns = ["학년", "학번", "이름", "희망학교", "희망직업"]
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-    except Exception as e: st.error(f"오류: {e}")
+    if menu == "🏠 학생 목록":
+        st.title("🏠 학생 목록")
+        try:
+            res = supabase.table("student_records").select("*").execute()
+            if res.data:
+                df = pd.DataFrame(res.data)
+                
+                # 💡 희망학교 1, 2, 3지망을 모두 선택하도록 수정
+                cols = ["학번", "이름", "희망학교1", "희망학교2", "희망학교3", "희망직업(본인)"]
+                
+                # 데이터베이스에 실제 존재하는 컬럼만 가져오기 (에러 방지)
+                existing_cols = [c for c in cols if c in df.columns]
+                df_display = df[existing_cols].copy()
+                
+                # 표 헤더 이름을 알기 쉽게 변경
+                # 지망 학교가 3개 다 있는 경우에만 이름을 변경합니다.
+                rename_dict = {
+                    "학번": "학번",
+                    "이름": "이름",
+                    "희망학교1": "1지망",
+                    "희망학교2": "2지망",
+                    "희망학교3": "3지망",
+                    "희망직업(본인)": "희망직업"
+                }
+                df_display.rename(columns=rename_dict, inplace=True)
+                
+                st.write(f"총 {len(df_display)}명 (3학년)")
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+            else: 
+                st.info("학생 데이터가 없습니다.")
+        except Exception as e: 
+            st.error(f"오류: {e}")
 
-elif menu == "✍️ 상담 기록 작성":
-    st.title("✍️ 상담 기록 작성")
-    try:
-        s_res = supabase.table("student_records").select("학번, 이름").execute()
-        s_list = [f"{s['학번']} {s['이름']}" for s in s_res.data]
-        selected_s = st.selectbox("학생 선택", s_list)
-        c_date = st.date_input("상담 일자", value=date.today())
-        content = st.text_area("상담 내용", height=300)
-        
-        if st.button("상담 기록 저장"):
-            sid, sname = selected_s.split(" ")
-            supabase.table("counseling_records").insert({
-                "student_id": sid, "student_name": sname,
-                "counseling_date": str(c_date), "counseling_content": content
-            }).execute()
-            st.success("저장되었습니다.")
-    except Exception as e: st.error(f"오류: {e}")
+    elif menu == "✍️ 상담 기록 작성":
+        st.title("✍️ 상담 기록 작성")
+        try:
+            s_res = supabase.table("student_records").select("학번, 이름").execute()
+            s_list = [f"{s['학번']} {s['이름']}" for s in s_res.data]
+            
+            selected_s = st.selectbox("학생 선택", s_list)
+            c_date = st.date_input("상담 일자", value=date.today())
+            content = st.text_area("상담 상세 내용", height=300)
+            
+            if st.button("상담 기록 저장"):
+                sid, sname = selected_s.split(" ")
+                supabase.table("counseling_records").insert({
+                    "student_id": sid,
+                    "student_name": sname,
+                    "counseling_date": str(c_date),
+                    "counseling_content": content
+                }).execute()
+                st.success(f"{sname} 학생의 상담 기록이 저장되었습니다.")
+        except Exception as e: st.error(f"오류: {e}")
 
-elif menu == "🔍 상담 기록 조회":
-    st.title("🔍 상담 기록 조회")
-    try:
-        res = supabase.table("counseling_records").select("*").order("counseling_date", desc=True).execute()
-        for row in res.data:
-            with st.expander(f"📅 {row['counseling_date']} | {row['student_name']}"):
-                st.info(row['counseling_content'])
-    except Exception as e: st.error(f"오류: {e}")
+    elif menu == "🔍 상담 기록 조회":
+        st.title("🔍 상담 기록 조회")
+        try:
+            res = supabase.table("counseling_records").select("*").order("counseling_date", desc=True).execute()
+            if res.data:
+                df = pd.DataFrame(res.data)
+                search = st.text_input("🔍 학생 이름으로 검색")
+                if search:
+                    df = df[df["student_name"].str.contains(search)]
+                
+                for _, row in df.iterrows():
+                    with st.expander(f"📅 {row['counseling_date']} | {row['student_name']} ({row['student_id']})"):
+                        st.info(row['counseling_content'])
+            else: st.info("기록이 없습니다.")
+        except Exception as e: st.error(f"오류: {e}")

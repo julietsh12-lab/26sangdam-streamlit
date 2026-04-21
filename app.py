@@ -9,21 +9,23 @@ key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 
 # ─── 페이지 설정 ──────────────────────────────────
-st.set_page_config(page_title="해운대중학교 진학상담", layout="centered")
+# 데이터가 많으므로 화면을 넓게(wide) 사용합니다.
+st.set_page_config(page_title="해운대중학교 진학상담", layout="wide")
 
 # ─── 커스텀 CSS (UI 스타일 유지) ──────────────────
 st.markdown("""
 <style>
     .school-title {
         color: #1e3a8a;
-        font-size: 28px;
+        font-size: 32px;
         font-weight: 800;
         text-align: center;
-        margin-bottom: 10px;
+        margin-top: 20px;
+        margin-bottom: 5px;
     }
     .sub-title {
         color: #64748b;
-        font-size: 16px;
+        font-size: 18px;
         text-align: center;
         margin-bottom: 30px;
     }
@@ -35,6 +37,11 @@ st.markdown("""
         height: 45px;
         font-weight: bold;
         border: none;
+    }
+    /* 표의 가독성을 위한 스타일 */
+    .stDataFrame {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -59,27 +66,30 @@ def login(email, password):
 
 # ─── 메인 화면 로직 ─────────────────────────────
 if st.session_state.user is None:
-    st.markdown('<div class="school-title">🏫 해운대중학교</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">진학상담 시스템 로그인을 환영합니다.</div>', unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
-    with tab1:
-        email = st.text_input("이메일 주소", placeholder="example@email.com", key="login_email")
-        password = st.text_input("비밀번호", type="password", key="login_pw")
-        if st.button("로그인"):
-            if login(email, password):
-                st.success("로그인 성공!")
-                st.rerun()
-            else:
-                st.error("로그인 정보를 확인해주세요.")
-    with tab2:
-        new_email = st.text_input("사용할 이메일", key="signup_email")
-        new_pw = st.text_input("비밀번호 (6자 이상)", type="password", key="signup_pw")
-        if st.button("회원가입 완료"):
-            try:
-                supabase.auth.sign_up({"email": new_email, "password": new_pw})
-                st.success("가입 완료! 로그인 탭을 이용해 주세요.")
-            except: st.error("가입 실패")
+    # 중앙 정렬을 위해 컬럼 사용
+    _, center_col, _ = st.columns([1, 2, 1])
+    with center_col:
+        st.markdown('<div class="school-title">🏫 해운대중학교</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-title">진학상담 시스템 로그인을 환영합니다.</div>', unsafe_allow_html=True)
+        
+        tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
+        with tab1:
+            email = st.text_input("이메일 주소", placeholder="example@email.com", key="login_email")
+            password = st.text_input("비밀번호", type="password", key="login_pw")
+            if st.button("로그인"):
+                if login(email, password):
+                    st.success("로그인 성공!")
+                    st.rerun()
+                else:
+                    st.error("로그인 정보를 확인해주세요.")
+        with tab2:
+            new_email = st.text_input("사용할 이메일", key="signup_email")
+            new_pw = st.text_input("비밀번호 (6자 이상)", type="password", key="signup_pw")
+            if st.button("회원가입 완료"):
+                try:
+                    supabase.auth.sign_up({"email": new_email, "password": new_pw})
+                    st.success("가입 완료! 로그인 탭을 이용해 주세요.")
+                except: st.error("가입 실패")
     st.stop()
 
 # ─── 로그인 후 화면 ──────────────────────────────
@@ -105,26 +115,26 @@ else:
             if res.data:
                 df = pd.DataFrame(res.data)
                 
-                # 💡 희망학교 1, 2, 3지망을 모두 선택하도록 수정
-                cols = ["학번", "이름", "희망학교1", "희망학교2", "희망학교3", "희망직업(본인)"]
+                # 💡 희망직업(부모) 컬럼까지 모두 포함
+                cols = ["학번", "이름", "희망학교1", "희망학교2", "희망학교3", "희망직업(본인)", "희망직업(부모)"]
                 
-                # 데이터베이스에 실제 존재하는 컬럼만 가져오기 (에러 방지)
+                # 데이터베이스에 실제 존재하는 컬럼만 가져오기
                 existing_cols = [c for c in cols if c in df.columns]
                 df_display = df[existing_cols].copy()
                 
-                # 표 헤더 이름을 알기 쉽게 변경
-                # 지망 학교가 3개 다 있는 경우에만 이름을 변경합니다.
+                # 표 헤더 이름 변경
                 rename_dict = {
                     "학번": "학번",
                     "이름": "이름",
                     "희망학교1": "1지망",
                     "희망학교2": "2지망",
                     "희망학교3": "3지망",
-                    "희망직업(본인)": "희망직업"
+                    "희망직업(본인)": "학생 희망직업",
+                    "희망직업(부모)": "학부모 희망직업"
                 }
                 df_display.rename(columns=rename_dict, inplace=True)
                 
-                st.write(f"총 {len(df_display)}명 (3학년)")
+                st.write(f"총 {len(df_display)}명 (3학년 전용)")
                 st.dataframe(df_display, use_container_width=True, hide_index=True)
             else: 
                 st.info("학생 데이터가 없습니다.")
@@ -139,7 +149,7 @@ else:
             
             selected_s = st.selectbox("학생 선택", s_list)
             c_date = st.date_input("상담 일자", value=date.today())
-            content = st.text_area("상담 상세 내용", height=300)
+            content = st.text_area("상담 상세 내용 (위 학생의 희망 진로를 참고하여 작성하세요)", height=350)
             
             if st.button("상담 기록 저장"):
                 sid, sname = selected_s.split(" ")
@@ -164,6 +174,7 @@ else:
                 
                 for _, row in df.iterrows():
                     with st.expander(f"📅 {row['counseling_date']} | {row['student_name']} ({row['student_id']})"):
-                        st.info(row['counseling_content'])
+                        st.write("---")
+                        st.write(row['counseling_content'])
             else: st.info("기록이 없습니다.")
         except Exception as e: st.error(f"오류: {e}")

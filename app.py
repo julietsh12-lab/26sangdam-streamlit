@@ -61,7 +61,7 @@ if st.session_state.user is None:
                     st.error("회원가입 실패. 이미 사용중인 이메일입니다.")
     st.stop()
 
-# ─── 로그아웃 ────────────────────────────────────
+# ─── 로그아웃 및 사이드바 ──────────────────────────
 with st.sidebar:
     st.write(f"👤 {st.session_state.user.email}")
     st.write(f"🔑 역할: {st.session_state.role}")
@@ -76,28 +76,44 @@ with st.sidebar:
 if menu == "학생 목록":
     st.title("📋 학생 목록")
     try:
+        # Supabase에서 데이터 가져오기
         res = supabase.table("student_records").select("*").execute()
-        st.write(f"총 {len(res.data)}명")
+        
         if res.data:
             df = pd.DataFrame(res.data)
-            df = df[["new_grade", "new_class", "new_number", "student_name", "score", "ranking", "birth_date", "note"]]
-            df.columns = ["학년", "반", "번호", "이름", "점수", "석차", "생년월일", "비고"]
+            
+            # 학번(예: 30101)의 첫 글자를 따서 '학년' 컬럼 생성
+            df['학년'] = df['학번'].astype(str).str[0].astype(int)
+            
+            # 화면에 보여줄 컬럼 선택 (Supabase의 한글 컬럼명 기준)
+            # 필요한 컬럼이 더 있다면 여기에 추가하세요 (예: "희망학교2")
+            show_cols = ["학년", "학번", "이름", "희망학교1", "희망직업(본인)"]
+            existing_cols = [c for c in show_cols if c in df.columns]
+            df_display = df[existing_cols].copy()
+            
+            # 컬럼 이름 예쁘게 바꾸기
+            df_display.columns = ["학년", "학번", "이름", "희망학교", "희망직업"]
+            
+            # 학년 필터
             grade_filter = st.selectbox("학년 선택", ["전체", 1, 2, 3])
             if grade_filter != "전체":
-                df = df[df["학년"] == grade_filter]
-            st.dataframe(df, use_container_width=True)
+                df_display = df_display[df_display["학년"] == grade_filter]
+            
+            st.write(f"총 {len(df_display)}명")
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
-            st.info("학생 데이터가 없습니다.")
+            st.info("학생 데이터가 없습니다. Supabase에 데이터를 먼저 넣어주세요.")
     except Exception as e:
-        st.error(f"오류: {e}")
+        st.error(f"오류가 발생했습니다: {e}")
 
 # ─── 상담 기록 작성 ───────────────────────────────
 elif menu == "상담 기록 작성":
     st.title("📝 상담 기록 작성")
     try:
-        students_res = supabase.table("student_records").select("student_name, new_grade, new_class, new_number").execute()
+        # 학생 목록 가져오기 (학번과 이름 사용)
+        students_res = supabase.table("student_records").select("학번, 이름").execute()
         students = students_res.data or []
-        student_options = [f"{s['new_grade']}{str(s['new_class']).zfill(2)}{str(s['new_number']).zfill(2)} {s['student_name']}" for s in students]
+        student_options = [f"{s['학번']} {s['이름']}" for s in students]
 
         selected = st.selectbox("학생 선택", student_options if student_options else ["학생 없음"])
         counsel_date = st.date_input("상담 날짜", value=date.today())
@@ -106,13 +122,15 @@ elif menu == "상담 기록 작성":
         content = st.text_area("상담 내용", height=200)
 
         if st.button("저장"):
-            if not student_options:
+            if not students:
                 st.error("학생 데이터가 없습니다.")
             elif not fields or not types or not content:
                 st.error("모든 항목을 입력해주세요.")
             else:
+                # 선택된 문자열에서 학번과 이름 분리
                 student_id = selected.split(" ")[0]
                 student_name = selected.split(" ")[1]
+                
                 supabase.table("counseling_records").insert({
                     "student_id": student_id,
                     "student_name": student_name,
@@ -137,7 +155,7 @@ elif menu == "상담 기록 조회":
             search = st.text_input("🔍 학생 이름 검색")
             if search:
                 df = df[df["이름"].str.contains(search)]
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("상담 기록이 없습니다.")
     except Exception as e:
